@@ -441,7 +441,7 @@ def GA_tabo(fname, max_iter, prev_pop):
             stalled += 1
         else:
             stalled = 0
-        if stalled > 10:
+        if stalled > 25:
             print("delta limit at itteration:", i)
             break
 
@@ -766,7 +766,7 @@ if __name__ == '__main__':
 
     
     n_pop = 50
-    n_concur = 3
+    n_concur = 5
     n_cycles = 10
     max_iter = 50
     citesFname = "cities1000.txt"
@@ -778,7 +778,7 @@ if __name__ == '__main__':
     for i in range(n_cycles):
         print("Cycle:", i)
 
-        #run 5 random tabo GAs
+        #run n_concur random tabo GAs
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_concur) as executor:
             futures = {executor.submit(GA_tabo,citesFname, max_iter, pop): pop for pop in pops}
             new_pops = []
@@ -788,7 +788,7 @@ if __name__ == '__main__':
                 new_pops.append(tabo_pop)
                 new_scores.append(scores_tabo)
 
-        #rerun with best prev and 4 new random 
+        #rerun with best prev and n_concur-1 new random 
         best_pop = new_pops[0]
         best_scores = new_scores[0]
         for i,pop in enumerate(new_pops):
@@ -810,5 +810,4 @@ if __name__ == '__main__':
     plt.xlabel("Generation")
     plt.legend()
     plt.show()
-    #test_all(citesFname, max_iter, inti)
     
