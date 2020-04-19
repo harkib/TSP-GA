@@ -351,13 +351,6 @@ def GA_rw_NWOX(fname, max_iter, prev_pop):
 
         next_gen = next_gen[:pop_size]
 
-        # next_gen = []
-        # for pair in parents:
-        #     #print(pair)
-        #     first, second = crossover_NWOX(pair)
-        #     next_gen.append(first)
-        #     next_gen.append(second)
-
         #mutate childern
         next_gen = single_mutation(next_gen)
         #next_gen[-1] = curr_gen[0][1]
@@ -376,6 +369,7 @@ def GA_tabo(fname, max_iter, prev_pop):
     curr_gen = prev_pop
     keep = math.floor(pop_size/5)
     keep = 0
+    stalled = 0
     assert keep <= pop_size
     
     scores = []
@@ -405,19 +399,13 @@ def GA_tabo(fname, max_iter, prev_pop):
 
     print("...Done")
     delta = 100
-    delta_lim = 1
+    delta_lim = .1
+
     for i in range(max_iter):
-
-        if delta < delta_lim:
-            print("delta limit at itteration:", i)
-            #curr_gen, scorse_ms = GA_mutate_search(fname, 1, curr_gen)
-            curr_gen, scorse_rw = test_all(fname, 1, curr_gen)
-            #scores.extend(scorse_rw)
-
+        best = curr_gen[0]
 
         #select parents
-        parents = selection_rw(curr_gen, 1, True)
-        
+        parents = selection_rw(curr_gen, 2, True)
 
         #gen childern -> next_gen
         next_gen = []
@@ -432,26 +420,31 @@ def GA_tabo(fname, max_iter, prev_pop):
 
         next_gen = next_gen[:pop_size]
 
-        # next_gen = []
-        # for pair in parents:
-        #     #print(pair)
-        #     first, second = crossover_NWOX(pair)
-        #     next_gen.append(first)
-        #     next_gen.append(second)
+
 
         #mutate childern
         next_gen = chuck_mutation(next_gen)
-        #next_gen[-1] = curr_gen[0][1]
+        next_gen = single_mutation(next_gen)
 
         #score childern
         assert len(next_gen) == pop_size 
         curr_gen = [(tsp.total_dist(p, city_locs), p) for p in next_gen]
+        curr_gen[-1] = best
         curr_gen.sort()
 
         #record historic scores
         scores.append(curr_gen[0][0])
+
         if len(scores) > 2:
             delta = scores[-2] -scores[-1]
+        if delta < delta_lim:
+            stalled += 1
+        else:
+            stalled = 0
+        if stalled > 10:
+            print("delta limit at itteration:", i)
+            break
+
 
     return curr_gen, scores
 
@@ -635,7 +628,7 @@ def chuck_mutation(next_gen):
 
 def chunk_mutation_thread(perm):
 
-    if random.uniform(0,1) < .1:
+    if random.uniform(0,1) < .3:
         n = len(perm)
         a = random.randint(0,n)
         b = random.randint(a,n)
@@ -772,32 +765,50 @@ def gen_rand_pop(fname, n_pop):
 if __name__ == '__main__':
 
     
-    n_pop = 100
-    max_iter = 7
+    n_pop = 50
+    n_concur = 3
+    n_cycles = 10
+    max_iter = 50
     citesFname = "cities1000.txt"
     prevPermFname = "1000_0.txt"
 
-    prev_pop = gen_rand_pop(citesFname, n_pop)
-    #prev_pop = load_pop(prevPermFname)
-    scores_tot = []
-    # prev_pop, scores_ms = GA_mutate_search(citesFname, 2000, prev_pop)
-    # scores_tot.extend(scores_ms)
-    tabo_pop, scores_tabo = GA_tabo(citesFname, max_iter, prev_pop)
-    save_pop(prevPermFname,tabo_pop)
-    # for i in range(1):
-    #     prev_pop, scores_all = test_all(citesFname, 10, prev_pop)
+    pops = [gen_rand_pop(citesFname, n_pop) for i in range(n_concur)]
+    #pops[0] = load_pop(prevPermFname)
+    total_scores = []
+    for i in range(n_cycles):
+        print("Cycle:", i)
 
-    #     save_pop(prevPermFname,prev_pop)
-    
+        #run 5 random tabo GAs
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_concur) as executor:
+            futures = {executor.submit(GA_tabo,citesFname, max_iter, pop): pop for pop in pops}
+            new_pops = []
+            new_scores = []
+            for future in concurrent.futures.as_completed(futures):
+                tabo_pop, scores_tabo  = future.result()
+                new_pops.append(tabo_pop)
+                new_scores.append(scores_tabo)
 
-    # plt.plot(scores_ms, label = "mutation search")
-    # plt.plot(scores_rw, label = "rw pmx search")
-    # plt.plot(scores_nx, label = "rw NWOK search")
-    plt.plot(scores_tabo, label = "Tabo + all search")
+        #rerun with best prev and 4 new random 
+        best_pop = new_pops[0]
+        best_scores = new_scores[0]
+        for i,pop in enumerate(new_pops):
+            print(pop[0][0])
+            if best_pop[0][0] > pop[0][0]:
+                best_pop = pop
+                best_scores = new_scores[i]
+
+        pops = [gen_rand_pop(citesFname, n_pop) for i in range(n_concur)]
+        pops[0] = best_pop
+        total_scores.extend(best_scores)
+
+        #save best
+        save_pop(prevPermFname,best_pop)
+
+
+    plt.plot(total_scores, label = "Tabo + with restarts")
     plt.ylabel('Score')
     plt.xlabel("Generation")
     plt.legend()
     plt.show()
-    print(scores_tabo[-1])
     #test_all(citesFname, max_iter, inti)
     
